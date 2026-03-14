@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>Save Card Securely</title>
+  <script src="https://js.stripe.com/v3/"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f5f5f7;
+      color: #1d1d1f;
+      min-height: 100vh;
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      padding: 24px 16px 48px;
+    }
+    .card {
+      background: #fff;
+      border-radius: 16px;
+      padding: 32px 24px;
+      max-width: 480px;
+      width: 100%;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+    }
+    .logo-area { text-align: center; margin-bottom: 24px; }
+    .business-name { font-size: 20px; font-weight: 600; color: #1d1d1f; }
+    .tagline { font-size: 14px; color: #6e6e73; margin-top: 4px; }
+    .section-title { font-size: 16px; font-weight: 600; color: #1d1d1f; margin-bottom: 8px; }
+    .job-info { background: #f5f5f7; border-radius: 10px; padding: 14px 16px; margin-bottom: 24px; }
+    .job-detail { font-size: 14px; color: #3a3a3c; margin-bottom: 6px; }
+    .job-detail:last-child { margin-bottom: 0; }
+    .label { color: #6e6e73; }
+    .notice { font-size: 13px; color: #6e6e73; margin-bottom: 20px; line-height: 1.5; }
+    #payment-element { margin-bottom: 20px; }
+    #submit-btn {
+      width: 100%; background: #007AFF; color: #fff; border: none;
+      border-radius: 12px; padding: 16px; font-size: 17px; font-weight: 600;
+      cursor: pointer; transition: background 0.15s;
+    }
+    #submit-btn:hover { background: #0066d6; }
+    #submit-btn:disabled { background: #a8c7fa; cursor: not-allowed; }
+    #error-msg { color: #ff3b30; font-size: 14px; margin-top: 12px; text-align: center; min-height: 20px; }
+    .success-view { display: none; text-align: center; padding: 16px 0; }
+    .success-icon {
+      width: 64px; height: 64px; background: #34c759; border-radius: 50%;
+      display: inline-flex; align-items: center; justify-content: center; margin-bottom: 16px;
+    }
+    .success-icon svg { width: 32px; height: 32px; }
+    .success-title { font-size: 20px; font-weight: 600; color: #1d1d1f; margin-bottom: 8px; }
+    .success-subtitle { font-size: 15px; color: #6e6e73; line-height: 1.5; }
+    .spinner {
+      display: inline-block; width: 18px; height: 18px;
+      border: 2px solid rgba(255,255,255,0.4); border-top-color: #fff;
+      border-radius: 50%; animation: spin 0.7s linear infinite;
+      vertical-align: middle; margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .error-page { text-align: center; padding: 32px 0; }
+    .error-page h2 { color: #ff3b30; font-size: 20px; margin-bottom: 12px; }
+    .error-page p { color: #6e6e73; font-size: 15px; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <div class="card" id="main-card">
+    <div id="loading" style="text-align:center;padding:40px 0;color:#6e6e73;">Loading…</div>
+  </div>
+
+  <script>
+    (function() {
+      // Parse query params
+      const params = new URLSearchParams(window.location.search);
+      const pk           = params.get('pk') || '';
+      const businessName = params.get('bn') || 'Your Cleaning Service';
+      const clientName   = params.get('cn') || 'Valued Client';
+      const amtRaw       = params.get('amt') || '';
+      const dtRaw        = params.get('dt') || '';
+
+      // client_secret is in the URL hash (never sent to server)
+      const clientSecret = decodeURIComponent(window.location.hash.replace('#', ''));
+
+      const card = document.getElementById('main-card');
+
+      if (!pk || !clientSecret) {
+        card.innerHTML = '<div class="error-page"><h2>Invalid Link</h2><p>This link is invalid or has expired. Please contact your service provider for a new link.</p></div>';
+        return;
+      }
+
+      // Build job info HTML
+      let jobInfoHTML = '';
+      if (amtRaw) {
+        const amt = parseFloat(amtRaw);
+        if (!isNaN(amt) && amt > 0) {
+          jobInfoHTML += `<div class="job-detail"><span class="label">Service Amount: </span><strong>$${amt.toFixed(2)}</strong></div>`;
+        }
+      }
+      if (dtRaw) {
+        const ts = parseInt(dtRaw);
+        if (!isNaN(ts)) {
+          const d = new Date(ts * 1000);
+          const formatted = d.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+          jobInfoHTML += `<div class="job-detail"><span class="label">Scheduled Date: </span><strong>${formatted}</strong></div>`;
+        }
+      }
+
+      // Render form
+      card.innerHTML = `
+        <div class="logo-area">
+          <div class="business-name">${businessName}</div>
+          <div class="tagline">Secure Card Authorization</div>
+        </div>
+        <div id="form-view">
+          <p class="section-title">Hi, ${clientName} 👋</p>
+          ${jobInfoHTML ? `<div class="job-info">${jobInfoHTML}</div>` : ''}
+          <p class="notice">Your card will be saved securely on file. No charge will be made today — your card is only used to hold funds before your scheduled service.</p>
+          <div id="payment-element"></div>
+          <button id="submit-btn" type="button">Save Card Securely</button>
+          <div id="error-msg"></div>
+        </div>
+        <div class="success-view" id="success-view">
+          <div class="success-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+          </div>
+          <div class="success-title">Card Saved!</div>
+          <div class="success-subtitle">
+            Your card has been securely saved.<br>
+            ${businessName} will use it to hold funds before your scheduled service.<br><br>
+            You can now close this page.
+          </div>
+        </div>
+      `;
+
+      // Init Stripe
+      const stripe = Stripe(pk);
+      const elements = stripe.elements({
+        clientSecret: clientSecret,
+        appearance: {
+          theme: 'stripe',
+          variables: {
+            colorPrimary: '#007AFF',
+            colorBackground: '#ffffff',
+            colorText: '#1d1d1f',
+            colorDanger: '#ff3b30',
+            fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif',
+            borderRadius: '8px',
+          }
+        }
+      });
+
+      const paymentElement = elements.create('payment', {
+        layout: { type: 'tabs', defaultCollapsed: false }
+      });
+      paymentElement.mount('#payment-element');
+
+      const submitBtn   = document.getElementById('submit-btn');
+      const errorMsg    = document.getElementById('error-msg');
+      const formView    = document.getElementById('form-view');
+      const successView = document.getElementById('success-view');
+
+      submitBtn.addEventListener('click', async () => {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner"></span>Saving…';
+        errorMsg.textContent = '';
+
+        const { error } = await stripe.confirmSetup({
+          elements,
+          redirect: 'if_required',
+        });
+
+        if (error) {
+          errorMsg.textContent = error.message || 'Something went wrong. Please try again.';
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = 'Save Card Securely';
+        } else {
+          formView.style.display = 'none';
+          successView.style.display = 'block';
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
